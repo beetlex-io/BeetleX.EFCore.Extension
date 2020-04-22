@@ -6,23 +6,23 @@ using System.Text;
 
 namespace BeetleX.EFCore.Extension
 {
-    class CommandReader
+    class TypeReader
     {
-        private static Dictionary<string, Dictionary<Type, CommandReader>> mCommandReaders = new Dictionary<string, Dictionary<Type, CommandReader>>(512);
+        private static Dictionary<string, Dictionary<Type, TypeReader>> mCommandReaders = new Dictionary<string, Dictionary<Type, TypeReader>>(512);
 
         private IList<ReadProperty> mProperties = new List<ReadProperty>();
 
-        public static CommandReader GetReader(string key, Type type)
+        public static TypeReader GetReader(string key, Type type)
         {
-            CommandReader reader;
-            Dictionary<Type, CommandReader> sqlreaders = GetSqlReaders(key);
+            TypeReader reader;
+            Dictionary<Type, TypeReader> sqlreaders = GetSqlReaders(key);
             if (!sqlreaders.TryGetValue(type, out reader))
             {
                 lock (mCommandReaders)
                 {
                     if (!sqlreaders.TryGetValue(type, out reader))
                     {
-                        reader = new CommandReader(type);
+                        reader = new TypeReader(type);
                         sqlreaders.Add(type, reader);
                     }
                 }
@@ -30,16 +30,16 @@ namespace BeetleX.EFCore.Extension
             return reader;
         }
 
-        private static Dictionary<Type, CommandReader> GetSqlReaders(string key)
+        private static Dictionary<Type, TypeReader> GetSqlReaders(string key)
         {
-            Dictionary<Type, CommandReader> result;
+            Dictionary<Type, TypeReader> result;
             if (!mCommandReaders.TryGetValue(key, out result))
             {
                 lock (mCommandReaders)
                 {
                     if (!mCommandReaders.TryGetValue(key, out result))
                     {
-                        result = new Dictionary<Type, CommandReader>(8);
+                        result = new Dictionary<Type, TypeReader>(8);
                         mCommandReaders.Add(key, result);
                     }
                 }
@@ -47,7 +47,7 @@ namespace BeetleX.EFCore.Extension
             return result;
         }
 
-        public CommandReader(Type type)
+        public TypeReader(Type type)
         {
             foreach (PropertyInfo info in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
