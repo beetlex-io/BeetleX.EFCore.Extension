@@ -6,23 +6,23 @@ using System.Text;
 
 namespace BeetleX.EFCore.Extension
 {
-    class TypeReader
+    class EntityReader
     {
-        private static Dictionary<string, Dictionary<Type, TypeReader>> mCommandReaders = new Dictionary<string, Dictionary<Type, TypeReader>>(512);
+        private static Dictionary<string, Dictionary<Type, EntityReader>> mCommandReaders = new Dictionary<string, Dictionary<Type, EntityReader>>(512);
 
         private IList<ReadProperty> mProperties = new List<ReadProperty>();
 
-        public static TypeReader GetReader(string key, Type type)
+        public static EntityReader GetReader(string key, Type type)
         {
-            TypeReader reader;
-            Dictionary<Type, TypeReader> sqlreaders = GetSqlReaders(key);
+            EntityReader reader;
+            Dictionary<Type, EntityReader> sqlreaders = GetSqlReaders(key);
             if (!sqlreaders.TryGetValue(type, out reader))
             {
                 lock (mCommandReaders)
                 {
                     if (!sqlreaders.TryGetValue(type, out reader))
                     {
-                        reader = new TypeReader(type);
+                        reader = new EntityReader(type);
                         sqlreaders.Add(type, reader);
                     }
                 }
@@ -30,16 +30,16 @@ namespace BeetleX.EFCore.Extension
             return reader;
         }
 
-        private static Dictionary<Type, TypeReader> GetSqlReaders(string key)
+        private static Dictionary<Type, EntityReader> GetSqlReaders(string key)
         {
-            Dictionary<Type, TypeReader> result;
+            Dictionary<Type, EntityReader> result;
             if (!mCommandReaders.TryGetValue(key, out result))
             {
                 lock (mCommandReaders)
                 {
                     if (!mCommandReaders.TryGetValue(key, out result))
                     {
-                        result = new Dictionary<Type, TypeReader>(8);
+                        result = new Dictionary<Type, EntityReader>(8);
                         mCommandReaders.Add(key, result);
                     }
                 }
@@ -47,7 +47,7 @@ namespace BeetleX.EFCore.Extension
             return result;
         }
 
-        public TypeReader(Type type)
+        public EntityReader(Type type)
         {
             foreach (PropertyInfo info in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {

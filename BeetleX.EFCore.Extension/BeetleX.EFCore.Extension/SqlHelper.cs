@@ -36,24 +36,43 @@ namespace BeetleX.EFCore.Extension
             return $"{Prefix}P{id}";
         }
 
+        internal static string GetTableName(Type type)
+        {
+            var table = type.GetCustomAttribute<TableAttribute>(false);
+            return table != null ? table.Name : type.Name;
+
+        }
+
+        internal static string GetPropertyName(Type type, PropertyInfo property)
+        {
+            string table = GetTableName(type);
+            ColumnAttribute col = property.GetCustomAttribute<ColumnAttribute>(false);
+            string name = col != null ? col.Name : property.Name;
+            return $"{table}.{name}";
+        }
+
         private void OnBuilderOrderByMethodExpression(SQL sql, MethodCallExpression methodCall)
         {
-            MemberExpression member = (MemberExpression)methodCall.Object;
+            MemberExpression member = (MemberExpression)methodCall.Arguments[0];
             var propert = (PropertyInfo)member.Member;
-            string name = $"{GetTableName(propert.PropertyType)}.{propert.Name}";
-            if(methodCall.Method.Name== "ASC")
+            string name = GetPropertyName(member.Expression.Type, propert);
+            if (methodCall.Method.Name == "ASC")
             {
                 sql.OrderByASC(name);
+                return;
             }
-            else if(methodCall.Method.Name == "DESC")
+            else if (methodCall.Method.Name == "DESC")
             {
                 sql.OrderByDESC(name);
+                return;
             }
             throw new Exception("Unsupported order by method " + methodCall.Method.Name);
         }
 
         public void AddOrderBy(SQL sql, Expression exp)
         {
+            if (!sql.HasOrderBy)
+                sql.AddSpace().Add("ORDER BY");
             if (exp is BinaryExpression binaryExpression)
             {
                 AddOrderBy(sql, binaryExpression.Left);
@@ -76,22 +95,20 @@ namespace BeetleX.EFCore.Extension
             OnBuilderExpression(sql, exp.Body);
         }
 
-        internal static string GetTableName(Type type)
-        {
-            var table = type.GetCustomAttribute<TableAttribute>(false);
-            return table != null ? table.Name : type.Name;
 
-        }
 
         private void OnBuilderMethodExpression(SQL sql, MethodCallExpression methodCall)
         {
             MemberExpression member = (MemberExpression)methodCall.Object;
-            var propert = (PropertyInfo)member.Member;
-            sql.AddSpace().Add(GetTableName(propert.DeclaringType)).Add(".").Add(propert.Name);
-            sql.AddSpace().Add("LIKE");
-            object value = GetExpressValue(methodCall.Arguments[0]);
+
+
             if (methodCall.Method == mContains)
             {
+                var propert = (PropertyInfo)member.Member;
+                string name = GetPropertyName(propert.DeclaringType, propert);
+                sql.AddSpace().Add(name);
+                sql.AddSpace().Add("LIKE");
+                object value = GetExpressValue(methodCall.Arguments[0]);
                 string pname = GetParameterName();
                 sql.AddSpace().Add(pname, (pname, $"%{value}%"));
                 return;
@@ -99,17 +116,67 @@ namespace BeetleX.EFCore.Extension
             }
             if (methodCall.Method == mStartWith)
             {
+                var propert = (PropertyInfo)member.Member;
+                string name = GetPropertyName(propert.DeclaringType, propert);
+                sql.AddSpace().Add(name);
+                sql.AddSpace().Add("LIKE");
+                object value = GetExpressValue(methodCall.Arguments[0]);
                 string pname = GetParameterName();
                 sql.AddSpace().Add(pname, (pname, $"{value}%"));
                 return;
             }
             if (methodCall.Method == mEndsWith)
             {
+                var propert = (PropertyInfo)member.Member;
+                string name = GetPropertyName(propert.DeclaringType, propert);
+                sql.AddSpace().Add(name);
+                sql.AddSpace().Add("LIKE");
+                object value = GetExpressValue(methodCall.Arguments[0]);
                 string pname = GetParameterName();
                 sql.AddSpace().Add(pname, (pname, $"%{value}"));
                 return;
             }
-            throw new Exception("Unsupported method call: " + methodCall.Method.Name);
+            if (methodCall.Method.Name == "In")
+            {
+                MemberExpression memberExpression = (MemberExpression)methodCall.Arguments[0];
+                var propert = (PropertyInfo)memberExpression.Member;
+                var type = memberExpression.Expression.Type;
+                var value = (IEnumerable)GetExpressValue(methodCall.Arguments[1]);
+                string name = GetPropertyName(type, propert);
+                sql.AddSpace().Add(name).AddSpace().Add("IN(");
+                int i = 0;
+                foreach (var item in value)
+                {
+                    if (i > 0)
+                        sql.Add(",");
+                    string pname = GetParameterName();
+                    sql.Add(pname, (pname, item));
+                    i++;
+                }
+                sql.AddSpace().Add(")");
+                return;
+            }
+            if (methodCall.Method.Name == "NotIn")
+            {
+                MemberExpression memberExpression = (MemberExpression)methodCall.Arguments[0];
+                var propert = (PropertyInfo)memberExpression.Member;
+                var type = memberExpression.Expression.Type;
+                var value = (IEnumerable)GetExpressValue(methodCall.Arguments[1]);
+                string name = GetPropertyName(type, propert);
+                sql.AddSpace().Add(name).AddSpace().Add("NOT IN(");
+                int i = 0;
+                foreach (var item in value)
+                {
+                    if (i > 0)
+                        sql.Add(",");
+                    string pname = GetParameterName();
+                    sql.Add(pname, (pname, item));
+                    i++;
+                }
+                sql.AddSpace().Add(")");
+                return;
+            }
+            throw new Exception($"Unsupported method call: {methodCall}");
         }
 
         private void OnBuilderLeftExpression(SQL sql, Expression left)
@@ -124,8 +191,8 @@ namespace BeetleX.EFCore.Extension
             else if (left is MemberExpression member)
             {
                 var propert = (PropertyInfo)member.Member;
-                sql.AddSpace().Add(GetTableName(propert.DeclaringType)).Add(".");
-                sql.AddSpace().Add(propert.Name);
+                string name = GetPropertyName(propert.DeclaringType, propert);
+                sql.AddSpace().Add(name);
             }
             else if (left is MethodCallExpression methodCall)
             {

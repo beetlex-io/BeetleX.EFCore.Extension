@@ -9,25 +9,115 @@ using System.Threading.Tasks;
 
 namespace BeetleX.EFCore.Extension
 {
+
+    public class Update<T>
+    {
+        public Update<T> Set(Expression<Action<T>> exp)
+        {
+            return this;
+        }
+        public int Update()
+        {
+
+        }
+    }
+
+
+    public class DELETE<T>
+    {
+        private string mTable;
+
+        private Expression<Func<T, bool>> mFilter;
+
+        public DELETE()
+        {
+            mTable = SqlHelper.GetTableName(typeof(T));
+        }
+
+        public DELETE<T> Where(Expression<Func<T, bool>> filter)
+        {
+            mFilter = filter;
+            return this;
+        }
+
+        public int Count<DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return Count(db);
+            }
+        }
+
+        public int Count(DbContext db)
+        {
+            SQL sql = $"select count(*) from {mTable}";
+            if (mFilter != null)
+                sql.Where<T>(mFilter);
+            return sql.ExecuteScalar<int>(db);
+
+        }
+
+        public int Execute<DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return Execute(db);
+            }
+        }
+
+        public int Execute(DbContext db)
+        {
+            SQL sql = $"delete from {mTable}";
+            if (mFilter != null)
+                sql.Where<T>(mFilter);
+            return sql.Execute(db);
+
+        }
+    }
+
+
     public class SELECT<T> where T : new()
     {
-        private SQL mSql;
+        private string mFields;
+
+        private string mTable;
+
+        private Expression<Func<T, bool>> mFilter;
+
+        private Expression<Func<T, bool>> mOrderBy;
 
         public SELECT(string fields = "*")
         {
-            string table = SqlHelper.GetTableName(typeof(T));
-            mSql = new SQL($"select {fields} {table}");
+            mFields = fields;
+            mTable = SqlHelper.GetTableName(typeof(T));
+        }
+
+        public int Count<DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return Count(db);
+            }
+        }
+
+        public int Count(DbContext db)
+        {
+            SQL sql = $"select count(*) from {mTable}";
+            if (mFilter != null)
+                sql.Where<T>(mFilter);
+            return sql.ExecuteScalar<int>(db);
+
         }
 
         public SELECT<T> Where(Expression<Func<T, bool>> filter)
         {
-            mSql.Where<T>(filter);
+            mFilter = filter;
             return this;
         }
 
-        public SELECT<T> OrderBy(Expression<Func<T, bool>> filter)
+        public SELECT<T> OrderBy(Expression<Func<T, bool>> order)
         {
-            mSql.OrderBy<T>(order);
+            mOrderBy = order;
             return this;
         }
 
@@ -41,8 +131,13 @@ namespace BeetleX.EFCore.Extension
 
         public T ListFirst(DbContext db)
         {
+            SQL sql = $"select {mFields} from {mTable}";
+            if (mFilter != null)
+                sql.Where<T>(mFilter);
+            if (mOrderBy != null)
+                sql.OrderBy<T>(mOrderBy);
+            return sql.ListFirst<T>(db);
 
-            return mSql.ListFirst<T>(db);
         }
 
         public IList<T> List<DB>(Region region = null)
@@ -56,7 +151,12 @@ namespace BeetleX.EFCore.Extension
 
         public IList<T> List(DbContext db, Region region = null)
         {
-            return mSql.List<T>(db, region);
+            SQL sql = $"select {mFields} from {mTable}";
+            if (mFilter != null)
+                sql.Where<T>(mFilter);
+            if (mOrderBy != null)
+                sql.OrderBy<T>(mOrderBy);
+            return sql.List<T>(db);
         }
 
     }
@@ -245,7 +345,7 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var cmd = mCommand.CreateCommand(conn);
-            return (T)cmd.ExecuteScalar();
+            return (T)Convert.ChangeType(cmd.ExecuteScalar(), typeof(T));
         }
 
         public T ListFirst<T, DB>() where DB : DbContext, new()
@@ -298,7 +398,7 @@ namespace BeetleX.EFCore.Extension
                 region = new Region(0, 10);
             }
             result = (IList)Activator.CreateInstance(itemstype, region.Size);
-            TypeReader cr = TypeReader.GetReader(mBaseSql, type);
+            EntityReader cr = EntityReader.GetReader(mBaseSql, type);
             int index = 0;
             Command cmd = GetCommand();
             var conn = db.Database.GetDbConnection();
