@@ -8,62 +8,59 @@ namespace BeetleX.EFCore.Extension.XUnitTest
     public class UnitTest1
     {
         [Fact]
-        public void select()
+        public void BaseSQL()
         {
-            SQL sql = "select * from customers";
-            sql.Add(" where city='Seattle'");
-            var items = sql.List<customers, NorthWind>();
-            Console.WriteLine(items.Count);
-        }
-        [Fact]
-        public void where()
-        {
-            string city = "asdfsdf%";
-            SQL sql = "select * from customers where true ";
-            sql.Valid(city)?.Add("and city like @city", ("@city", city));
-            var items = sql.List<customers, NorthWind>();
-            Console.WriteLine(items.Count);
-        }
-        [Fact]
-        public void Expression()
-        {
-            var db = new NorthWind();
-            db.Customers.Where(p => p.company == "asdf");
-        }
-        [Fact]
-        public void SELECT()
-        {
-            int[] ids = new int[] { 1, 2 };
-            SELECT<customers> customer = new SELECT<customers>();
-            customer.Where(c => c.id.NotIn(ids)).OrderBy(c => c.first_name.ASC());
-            int count = customer.Count<NorthWind>();
-            var items = customer.List<NorthWind>();
-            Console.WriteLine(items.Count);
-        }
-        [Fact]
-        public void DELETE()
-        {
+            string select = "select * from employees";
+            SQL sql = select;
+            var items = sql.List<employees, NorthWind>();
+            Assert.Equal<int>(9, items.Count);
 
-            SELECT<customers> customer = new SELECT<customers>();
-            customer.Where(c => c.id > 10).OrderBy(c => c.first_name.ASC());
-            int count = customer.Count<NorthWind>();
-            var items = customer.List<NorthWind>();
-            Console.WriteLine(items.Count);
-
-            DELETE<customers> del = new DELETE<customers>();
-            del.Where(c => c.id > 50);
-            count = del.Count<NorthWind>();
-            count = del.Execute<NorthWind>();
+            sql = select;
+            sql.Add(" where id in (@p1,@p2) order by id asc", ("@p1", 1), ("@p2", 2));
+            items = sql.List<employees, NorthWind>();
+            Assert.Equal<int>(1, items[0].id);
+            Assert.Equal<int>(2, items[1].id);
 
 
+            sql = select;
+            sql.Where<employees>(e => e.id == 3);
+            var item = sql.ListFirst<employees, NorthWind>();
+            Assert.Equal<int>(3, item.id);
+
+            sql = select;
+            sql.OrderBy<employees>(p => p.id.DESC());
+            item = sql.ListFirst<employees, NorthWind>();
+            Assert.Equal<int>(9, item.id);
         }
         [Fact]
-        public void Delete_with_dbset()
+        public void Update()
         {
+            UpdateSql<employees> update = new UpdateSql<employees>();
+            update.Set(f => f.fax_number == "123").Where(f => f.id == 1).Execute<NorthWind>();
+
+            SelectSql<employees> list = new SelectSql<employees>();
+            list.Where(f => f.id == 1);
+            var item = list.ListFirst<NorthWind>();
+            Assert.Equal("123", item.fax_number);
 
             using (var db = new NorthWind())
             {
-                var count = db.Customers.Delete(d => d.id > 5);
+                db.Customers.Update(c => c.city == "gz").Execute();
+                SelectSql<customers> lstCustomers = new SelectSql<customers>();
+                foreach (var customer in lstCustomers.List(db))
+                {
+                    Assert.Equal("gz", customer.city);
+                }
+
+            }
+          
+        }
+        [Fact]
+        public void Delete()
+        {
+            using (var db = new NorthWind())
+            {
+                db.Customers.Delete(f => f.id.In(1, 2, 3));
             }
         }
     }

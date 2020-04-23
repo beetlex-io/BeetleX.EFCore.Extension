@@ -11,7 +11,7 @@ using System.Text;
 namespace BeetleX.EFCore.Extension
 {
 
-    public class SqlHelper
+    class SqlHelper
     {
         static SqlHelper()
         {
@@ -26,13 +26,18 @@ namespace BeetleX.EFCore.Extension
 
         private static MethodInfo mEndsWith;
 
-        private int mID = 1;
+        [ThreadStatic]
+        private static int mID = 1;
 
         public string Prefix { get; set; } = "@";
 
         private string GetParameterName()
         {
-            var id = System.Threading.Interlocked.Increment(ref mID);
+            if (mID > 1000)
+                mID = 1;
+            else
+                mID++;
+            var id = mID;
             return $"{Prefix}P{id}";
         }
 
@@ -49,6 +54,66 @@ namespace BeetleX.EFCore.Extension
             ColumnAttribute col = property.GetCustomAttribute<ColumnAttribute>(false);
             string name = col != null ? col.Name : property.Name;
             return $"{table}.{name}";
+        }
+
+        public void AddUpdateExpression(SQL sql, Expression exp)
+        {
+            if (exp is UnaryExpression unary)
+            {
+                AddUpdateExpression(sql, unary.Operand);
+                return;
+            }
+            BinaryExpression binaryExpression = (BinaryExpression)exp;
+            MemberExpression left = (MemberExpression)binaryExpression.Left;
+            var property = (PropertyInfo)left.Member;
+            object value = null;
+            if (binaryExpression.Right is ConstantExpression constant)
+            {
+                value = constant.Value;
+            }
+            else if (binaryExpression.Right is MemberExpression member)
+            {
+                value = GetValue(member);
+            }
+            else
+            {
+                throw new Exception($"Unsupported update expression {binaryExpression.Right}");
+            }
+            string name = GetPropertyName(property.DeclaringType, property);
+            if (exp.NodeType == ExpressionType.Equal)//=
+            {
+                sql.AddSpace().Add(name).Add("=");
+                var pname = GetParameterName();
+                sql.Add(pname, (pname, value));
+            }
+            else if (exp.NodeType == ExpressionType.Add)//+
+            {
+                sql.AddSpace().Add(name).Add("=").Add(name).Add("+");
+                var pname = GetParameterName();
+                sql.Add(pname, (pname, value));
+            }
+            else if (exp.NodeType == ExpressionType.Divide)// /
+            {
+                sql.AddSpace().Add(name).Add("=").Add(name).Add("/");
+                var pname = GetParameterName();
+                sql.Add(pname, (pname, value));
+            }
+            else if (exp.NodeType == ExpressionType.Multiply)// *
+            {
+                sql.AddSpace().Add(name).Add("=").Add(name).Add("*");
+                var pname = GetParameterName();
+                sql.Add(pname, (pname, value));
+            }
+            else if (exp.NodeType == ExpressionType.Negate) //-
+            {
+                sql.AddSpace().Add(name).Add("=").Add(name).Add("-");
+                var pname = GetParameterName();
+                sql.Add(pname, (pname, value));
+            }
+            else
+            {
+                throw new Exception($"Unsupported update expression {exp}");
+            }
         }
 
         private void OnBuilderOrderByMethodExpression(SQL sql, MethodCallExpression methodCall)
@@ -272,115 +337,6 @@ namespace BeetleX.EFCore.Extension
             sql.AddSpace().Add(")");
         }
 
-
-        public string ToSql(SQL sql, LambdaExpression expression)
-        {
-            return Recurse(sql, expression.Body, true);
-        }
-
-        private string Recurse(SQL sql, Expression expression, bool isUnary = false, bool quote = true)
-        {
-            if (expression is UnaryExpression)
-            {
-                var unary = (UnaryExpression)expression;
-                var right = Recurse(sql, unary.Operand, true);
-                return "(" + NodeTypeToString(unary.NodeType, right == "NULL") + " " + right + ")";
-            }
-            if (expression is BinaryExpression)
-            {
-                var body = (BinaryExpression)expression;
-                var right = Recurse(sql, body.Right);
-                return "(" + Recurse(sql, body.Left) + " " + NodeTypeToString(body.NodeType, right == "NULL") + " " + right + ")";
-            }
-            if (expression is ConstantExpression)
-            {
-                var constant = (ConstantExpression)expression;
-                return ValueToString(constant.Value, isUnary, quote);
-            }
-            if (expression is MemberExpression)
-            {
-                var member = (MemberExpression)expression;
-
-                if (member.Member is PropertyInfo)
-                {
-                    var property = (PropertyInfo)member.Member;
-                    var colName = property.Name;
-                    if (isUnary && member.Type == typeof(bool))
-                    {
-                        return "([" + colName + "] = 1)";
-                    }
-                    return "[" + colName + "]";
-                }
-                if (member.Member is FieldInfo)
-                {
-                    return ValueToString(GetValue(member), isUnary, quote);
-                }
-                throw new Exception($"Expression does not refer to a property or field: {expression}");
-            }
-            if (expression is MethodCallExpression)
-            {
-                var methodCall = (MethodCallExpression)expression;
-                // LIKE queries:
-                if (methodCall.Method == typeof(string).GetMethod("Contains", new[] { typeof(string) }))
-                {
-                    return "(" + Recurse(sql, methodCall.Object) + " LIKE '%" + Recurse(sql, methodCall.Arguments[0], quote: false) + "%')";
-                }
-                if (methodCall.Method == typeof(string).GetMethod("StartsWith", new[] { typeof(string) }))
-                {
-                    return "(" + Recurse(sql, methodCall.Object) + " LIKE '" + Recurse(sql, methodCall.Arguments[0], quote: false) + "%')";
-                }
-                if (methodCall.Method == typeof(string).GetMethod("EndsWith", new[] { typeof(string) }))
-                {
-                    return "(" + Recurse(sql, methodCall.Object) + " LIKE '%" + Recurse(sql, methodCall.Arguments[0], quote: false) + "')";
-                }
-                // IN queries:
-                if (methodCall.Method.Name == "Contains")
-                {
-                    Expression collection;
-                    Expression property;
-                    if (methodCall.Method.IsDefined(typeof(ExtensionAttribute)) && methodCall.Arguments.Count == 2)
-                    {
-                        collection = methodCall.Arguments[0];
-                        property = methodCall.Arguments[1];
-                    }
-                    else if (!methodCall.Method.IsDefined(typeof(ExtensionAttribute)) && methodCall.Arguments.Count == 1)
-                    {
-                        collection = methodCall.Object;
-                        property = methodCall.Arguments[0];
-                    }
-                    else
-                    {
-                        throw new Exception("Unsupported method call: " + methodCall.Method.Name);
-                    }
-                    var values = (IEnumerable)GetValue(collection);
-                    var concated = "";
-                    foreach (var e in values)
-                    {
-                        concated += ValueToString(e, false, true) + ", ";
-                    }
-                    if (concated == "")
-                    {
-                        return ValueToString(false, true, false);
-                    }
-                    return "(" + Recurse(sql, property) + " IN (" + concated.Substring(0, concated.Length - 2) + "))";
-                }
-                throw new Exception("Unsupported method call: " + methodCall.Method.Name);
-            }
-            throw new Exception("Unsupported expression: " + expression.GetType().Name);
-        }
-
-        public string ValueToString(object value, bool isUnary, bool quote)
-        {
-            if (value is bool)
-            {
-                if (isUnary)
-                {
-                    return (bool)value ? "(1=1)" : "(1=0)";
-                }
-                return (bool)value ? "1" : "0";
-            }
-            return value.ToString();
-        }
 
         private static bool IsEnumerableType(Type type)
         {

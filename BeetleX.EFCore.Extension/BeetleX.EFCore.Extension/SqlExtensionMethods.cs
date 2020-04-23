@@ -31,10 +31,18 @@ namespace BeetleX.EFCore.Extension
 
         public static int Delete<T>(this DbSet<T> entity, Expression<Func<T, bool>> filter) where T : class
         {
-            DELETE<T> del = new DELETE<T>();
+            DeleteSql<T> del = new DeleteSql<T>();
             del.Where(filter);
             var db = entity.GetService<ICurrentDbContext>().Context;
             return del.Execute(db);
+        }
+        public static UpdateSql<T> Update<T>(this DbSet<T> entity,params Expression<Func<T, object>>[] exp) where T : class
+        {
+            UpdateSql<T> update = new UpdateSql<T>();
+            var db = entity.GetService<ICurrentDbContext>().Context;
+            update.DB = db;
+            update.Set(exp);
+            return update;
         }
     }
 }

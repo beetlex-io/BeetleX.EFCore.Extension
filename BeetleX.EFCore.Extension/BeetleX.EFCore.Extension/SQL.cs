@@ -10,31 +10,78 @@ using System.Threading.Tasks;
 namespace BeetleX.EFCore.Extension
 {
 
-    public class Update<T>
+    public class UpdateSql<T>
     {
-        public Update<T> Set(Expression<Action<T>> exp)
+        public UpdateSql()
         {
+            mTable = SqlHelper.GetTableName(typeof(T));
+        }
+
+
+        private List<Expression> mUpdateExpress = new List<Expression>();
+
+        private Expression<Func<T, bool>> mWhere;
+
+        private string mTable;
+
+        public UpdateSql<T> Set(params Expression<Func<T, object>>[] exp)
+        {
+            mUpdateExpress.AddRange(exp);
             return this;
         }
-        public int Update()
-        {
 
+        internal DbContext DB { get; set; }
+
+        public UpdateSql<T> Where(Expression<Func<T, bool>> filter)
+        {
+            mWhere = filter;
+            return this;
+        }
+
+        public int Execute<DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return Execute(db);
+            }
+        }
+        public int Execute()
+        {
+            if (DB == null)
+                throw new Exception("The dbcontext cannot be null!");
+            return Execute(DB);
+        }
+        public int Execute(DbContext db)
+        {
+            SqlHelper helper = new SqlHelper();
+            SQL sql = new SQL($"UPDATE {mTable} SET ");
+            for (int i = 0; i < mUpdateExpress.Count; i++)
+            {
+                if (i > 0)
+                    sql.Add(",");
+                helper.AddUpdateExpression(sql, ((LambdaExpression)mUpdateExpress[i]).Body);
+            }
+            if(mWhere !=null)
+                sql.Where<T>(mWhere);
+            return sql.Execute(db);
         }
     }
 
 
-    public class DELETE<T>
+    public class DeleteSql<T>
     {
         private string mTable;
 
         private Expression<Func<T, bool>> mFilter;
 
-        public DELETE()
+        public string Sql { get; private set; }
+
+        public DeleteSql()
         {
             mTable = SqlHelper.GetTableName(typeof(T));
         }
 
-        public DELETE<T> Where(Expression<Func<T, bool>> filter)
+        public DeleteSql<T> Where(Expression<Func<T, bool>> filter)
         {
             mFilter = filter;
             return this;
@@ -50,7 +97,7 @@ namespace BeetleX.EFCore.Extension
 
         public int Count(DbContext db)
         {
-            SQL sql = $"select count(*) from {mTable}";
+            SQL sql = $"SELECT count(*) FROM {mTable}";
             if (mFilter != null)
                 sql.Where<T>(mFilter);
             return sql.ExecuteScalar<int>(db);
@@ -67,7 +114,7 @@ namespace BeetleX.EFCore.Extension
 
         public int Execute(DbContext db)
         {
-            SQL sql = $"delete from {mTable}";
+            SQL sql = $"DELETE FROM {mTable}";
             if (mFilter != null)
                 sql.Where<T>(mFilter);
             return sql.Execute(db);
@@ -76,7 +123,7 @@ namespace BeetleX.EFCore.Extension
     }
 
 
-    public class SELECT<T> where T : new()
+    public class SelectSql<T> where T : new()
     {
         private string mFields;
 
@@ -86,7 +133,7 @@ namespace BeetleX.EFCore.Extension
 
         private Expression<Func<T, bool>> mOrderBy;
 
-        public SELECT(string fields = "*")
+        public SelectSql(string fields = "*")
         {
             mFields = fields;
             mTable = SqlHelper.GetTableName(typeof(T));
@@ -102,20 +149,20 @@ namespace BeetleX.EFCore.Extension
 
         public int Count(DbContext db)
         {
-            SQL sql = $"select count(*) from {mTable}";
+            SQL sql = $"SELECT count(*) FROM {mTable}";
             if (mFilter != null)
                 sql.Where<T>(mFilter);
             return sql.ExecuteScalar<int>(db);
 
         }
 
-        public SELECT<T> Where(Expression<Func<T, bool>> filter)
+        public SelectSql<T> Where(Expression<Func<T, bool>> filter)
         {
             mFilter = filter;
             return this;
         }
 
-        public SELECT<T> OrderBy(Expression<Func<T, bool>> order)
+        public SelectSql<T> OrderBy(Expression<Func<T, bool>> order)
         {
             mOrderBy = order;
             return this;
@@ -131,7 +178,7 @@ namespace BeetleX.EFCore.Extension
 
         public T ListFirst(DbContext db)
         {
-            SQL sql = $"select {mFields} from {mTable}";
+            SQL sql = $"SELECT {mFields} FROM {mTable}";
             if (mFilter != null)
                 sql.Where<T>(mFilter);
             if (mOrderBy != null)
@@ -151,7 +198,7 @@ namespace BeetleX.EFCore.Extension
 
         public IList<T> List(DbContext db, Region region = null)
         {
-            SQL sql = $"select {mFields} from {mTable}";
+            SQL sql = $"SELECT {mFields} FROM {mTable}";
             if (mFilter != null)
                 sql.Where<T>(mFilter);
             if (mOrderBy != null)
@@ -247,7 +294,7 @@ namespace BeetleX.EFCore.Extension
 
         public SQL OrderByDESC(params string[] fields)
         {
-            if (!HasWhere)
+            if (!HasOrderBy)
             {
                 AddSpace().Add("ORDER BY");
             }
