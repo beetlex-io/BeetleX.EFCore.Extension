@@ -27,7 +27,6 @@ update.Set(f => f.fax_number == "123").Where(f => f.id == 1).Execute<NorthWind>(
 using (var db = new NorthWind())
 {
     db.Customers.Update(c => c.city == "gz").Execute();
-    SelectSql<customers> lstCustomers = new SelectSql<customers>();
 }
 ```
 
