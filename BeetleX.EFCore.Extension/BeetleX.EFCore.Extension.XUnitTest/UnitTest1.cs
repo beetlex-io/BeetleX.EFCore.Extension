@@ -33,6 +33,12 @@ namespace BeetleX.EFCore.Extension.XUnitTest
             Assert.Equal<int>(9, item.id);
         }
         [Fact]
+        public void Joni()
+        {
+          
+        }
+
+        [Fact]
         public void Update()
         {
             UpdateSql<employees> update = new UpdateSql<employees>();
@@ -53,11 +59,14 @@ namespace BeetleX.EFCore.Extension.XUnitTest
                 }
 
             }
-          
+
         }
         [Fact]
         public void Delete()
         {
+            DeleteSql<employees> del = new DeleteSql<employees>();
+            del.Where(f => f.id.In(1, 2, 3));
+            del.Execute<NorthWind>();
             using (var db = new NorthWind())
             {
                 db.Customers.Delete(f => f.id.In(1, 2, 3));

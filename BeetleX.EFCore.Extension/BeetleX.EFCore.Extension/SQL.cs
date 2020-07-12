@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
@@ -16,7 +17,6 @@ namespace BeetleX.EFCore.Extension
         {
             mTable = SqlHelper.GetTableName(typeof(T));
         }
-
 
         private List<Expression> mUpdateExpress = new List<Expression>();
 
@@ -61,7 +61,7 @@ namespace BeetleX.EFCore.Extension
                     sql.Add(",");
                 helper.AddUpdateExpression(sql, ((LambdaExpression)mUpdateExpress[i]).Body);
             }
-            if(mWhere !=null)
+            if (mWhere != null)
                 sql.Where<T>(mWhere);
             return sql.Execute(db);
         }
@@ -123,20 +123,20 @@ namespace BeetleX.EFCore.Extension
     }
 
 
-    public class SelectSql<T> where T : new()
+    public class SelectSql<Entity> where Entity : new()
     {
         private string mFields;
 
         private string mTable;
 
-        private Expression<Func<T, bool>> mFilter;
+        private List<Filter> mFilters = new System.Collections.Generic.List<Filter>();
 
-        private Expression<Func<T, bool>> mOrderBy;
+        private Expression<Func<Entity, bool>> mOrderBy;
 
         public SelectSql(string fields = "*")
         {
             mFields = fields;
-            mTable = SqlHelper.GetTableName(typeof(T));
+            mTable = SqlHelper.GetTableName(typeof(Entity));
         }
 
         public int Count<DB>() where DB : DbContext, new()
@@ -150,25 +150,53 @@ namespace BeetleX.EFCore.Extension
         public int Count(DbContext db)
         {
             SQL sql = $"SELECT count(*) FROM {mTable}";
-            if (mFilter != null)
-                sql.Where<T>(mFilter);
+            if (mFilters.Count > 0)
+                sql += " where ";
+            SqlHelper where = new SqlHelper();
+            for (int i = 0; i < mFilters.Count; i++)
+            {
+                var item = mFilters[i];
+                if (i > 0)
+                {
+                    sql += $" {item.Type} ";
+                }
+                where.AddWhere(sql, item.Expression);
+            }
             return sql.ExecuteScalar<int>(db);
 
         }
-
-        public SelectSql<T> Where(Expression<Func<T, bool>> filter)
+        public SelectSql<Entity> Or(Expression<Func<Entity, bool>> filter)
         {
-            mFilter = filter;
+            mFilters.Add(new Filter { Type = "Or", Expression = filter });
+            return this;
+        }
+        public SelectSql<Entity> And(Expression<Func<Entity, bool>> filter)
+        {
+            mFilters.Add(new Filter { Type = "And", Expression = filter });
             return this;
         }
 
-        public SelectSql<T> OrderBy(Expression<Func<T, bool>> order)
+        public SelectSql<Entity> Or(bool exp, Expression<Func<Entity, bool>> filter)
+        {
+            if (exp)
+                mFilters.Add(new Filter { Type = "Or", Expression = filter });
+            return this;
+        }
+
+        public SelectSql<Entity> And(bool exp, Expression<Func<Entity, bool>> filter)
+        {
+            if (exp)
+                mFilters.Add(new Filter { Type = "And", Expression = filter });
+            return this;
+        }
+
+        public SelectSql<Entity> OrderBy(Expression<Func<Entity, bool>> order)
         {
             mOrderBy = order;
             return this;
         }
 
-        public T ListFirst<DB>() where DB : DbContext, new()
+        public Entity ListFirst<DB>() where DB : DbContext, new()
         {
             using (var db = new DB())
             {
@@ -176,18 +204,28 @@ namespace BeetleX.EFCore.Extension
             }
         }
 
-        public T ListFirst(DbContext db)
+        public Entity ListFirst(DbContext db)
         {
             SQL sql = $"SELECT {mFields} FROM {mTable}";
-            if (mFilter != null)
-                sql.Where<T>(mFilter);
+            if (mFilters.Count > 0)
+                sql += " where ";
+            SqlHelper where = new SqlHelper();
+            for (int i = 0; i < mFilters.Count; i++)
+            {
+                var item = mFilters[i];
+                if (i > 0)
+                {
+                    sql += $" {item.Type} ";
+                }
+                where.AddWhere(sql, item.Expression);
+            }
             if (mOrderBy != null)
-                sql.OrderBy<T>(mOrderBy);
-            return sql.ListFirst<T>(db);
+                sql.OrderBy<Entity>(mOrderBy);
+            return sql.ListFirst<Entity>(db);
 
         }
 
-        public IList<T> List<DB>(Region region = null)
+        public IList<Entity> List<DB>(Region region = null)
             where DB : DbContext, new()
         {
             using (var db = new DB())
@@ -196,16 +234,34 @@ namespace BeetleX.EFCore.Extension
             }
         }
 
-        public IList<T> List(DbContext db, Region region = null)
+        public IList<Entity> List(DbContext db, Region region = null)
         {
             SQL sql = $"SELECT {mFields} FROM {mTable}";
-            if (mFilter != null)
-                sql.Where<T>(mFilter);
+            if (mFilters.Count > 0)
+                sql += " where ";
+            SqlHelper where = new SqlHelper();
+            for (int i = 0; i < mFilters.Count; i++)
+            {
+                var item = mFilters[i];
+                if (i > 0)
+                {
+                    sql += $" {item.Type} ";
+                }
+                where.AddWhere(sql, item.Expression);
+            }
             if (mOrderBy != null)
-                sql.OrderBy<T>(mOrderBy);
-            return sql.List<T>(db);
+                sql.OrderBy<Entity>(mOrderBy);
+            return sql.List<Entity>(db);
         }
 
+    }
+
+
+    class Filter
+    {
+        public LambdaExpression Expression { get; set; }
+
+        public string Type { get; set; }
     }
 
 
@@ -375,6 +431,7 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var cmd = mCommand.CreateCommand(conn);
+            SQLExecuting?.Invoke(cmd);
             return cmd.ExecuteNonQuery();
         }
 
@@ -392,6 +449,7 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var cmd = mCommand.CreateCommand(conn);
+            SQLExecuting?.Invoke(cmd);
             return (T)Convert.ChangeType(cmd.ExecuteScalar(), typeof(T));
         }
 
@@ -452,6 +510,7 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var dbcmd = cmd.CreateCommand(conn);
+            SQLExecuting?.Invoke(dbcmd);
             using (IDataReader reader = dbcmd.ExecuteReader())
             {
 
@@ -508,5 +567,7 @@ namespace BeetleX.EFCore.Extension
         {
             return Command.Text.ToString();
         }
+
+        public Action<DbCommand> SQLExecuting { get; set; }
     }
 }

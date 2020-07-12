@@ -79,7 +79,7 @@ namespace BeetleX.EFCore.Extension
             {
                 throw new Exception($"Unsupported update expression {binaryExpression.Right}");
             }
-            string name = GetPropertyName(property.DeclaringType, property);
+            string name = property.Name;//GetPropertyName(property.DeclaringType, property);
             if (exp.NodeType == ExpressionType.Equal)//=
             {
                 sql.AddSpace().Add(name).Add("=");
@@ -376,7 +376,7 @@ namespace BeetleX.EFCore.Extension
                 case ExpressionType.Divide:
                     return "/";
                 case ExpressionType.Equal:
-                    return rightIsNull ? "IS" : "=";
+                    return rightIsNull ? "IS NULL" : "=";
                 case ExpressionType.ExclusiveOr:
                     return "^";
                 case ExpressionType.GreaterThan:
