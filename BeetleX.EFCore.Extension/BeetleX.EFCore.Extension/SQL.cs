@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -431,6 +432,7 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var cmd = mCommand.CreateCommand(conn);
+            cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
             SQLExecuting?.Invoke(cmd);
             return cmd.ExecuteNonQuery();
         }
@@ -449,6 +451,7 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var cmd = mCommand.CreateCommand(conn);
+            cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
             SQLExecuting?.Invoke(cmd);
             return (T)Convert.ChangeType(cmd.ExecuteScalar(), typeof(T));
         }
@@ -510,6 +513,7 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var dbcmd = cmd.CreateCommand(conn);
+            dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
             SQLExecuting?.Invoke(dbcmd);
             using (IDataReader reader = dbcmd.ExecuteReader())
             {

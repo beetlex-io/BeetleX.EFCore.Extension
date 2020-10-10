@@ -10,11 +10,12 @@ namespace BeetleX.EFCore.Extension.XUnitTest
         [Fact]
         public void BaseSQL()
         {
-            string select = "select * from employees";
-            SQL sql = select;
+
+            SQL sql = "select * from employees";
             var items = sql.List<employees, NorthWind>();
             Assert.Equal<int>(9, items.Count);
 
+            var select = "select * from employees";
             sql = select;
             sql.Add(" where id in (@p1,@p2) order by id asc", ("@p1", 1), ("@p2", 2));
             items = sql.List<employees, NorthWind>();
@@ -45,7 +46,7 @@ namespace BeetleX.EFCore.Extension.XUnitTest
             update.Set(f => f.fax_number == "123").Where(f => f.id == 1).Execute<NorthWind>();
 
             SelectSql<employees> list = new SelectSql<employees>();
-            list.Where(f => f.id == 1);
+            list.And(f => f.id == 1);
             var item = list.ListFirst<NorthWind>();
             Assert.Equal("123", item.fax_number);
 

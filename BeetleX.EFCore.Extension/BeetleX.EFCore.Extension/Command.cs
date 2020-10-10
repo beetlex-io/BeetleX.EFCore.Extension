@@ -148,6 +148,7 @@ namespace BeetleX.EFCore.Extension
         public DbCommand CreateCommand(DbConnection conn)
         {
             DbCommand cmd = conn.CreateCommand();
+            
             cmd.CommandText = Text.ToString();
             cmd.CommandType = CommandType;
             DbCommand = cmd;
