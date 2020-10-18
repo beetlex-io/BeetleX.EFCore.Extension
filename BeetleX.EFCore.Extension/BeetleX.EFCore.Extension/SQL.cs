@@ -12,9 +12,9 @@ using System.Threading.Tasks;
 namespace BeetleX.EFCore.Extension
 {
 
-    public class UpdateSql<T>
+    public class Update<T>
     {
-        public UpdateSql()
+        public Update()
         {
             mTable = SqlHelper.GetTableName(typeof(T));
         }
@@ -25,7 +25,7 @@ namespace BeetleX.EFCore.Extension
 
         private string mTable;
 
-        public UpdateSql<T> Set(params Expression<Func<T, object>>[] exp)
+        public Update<T> Set(params Expression<Func<T, object>>[] exp)
         {
             mUpdateExpress.AddRange(exp);
             return this;
@@ -33,7 +33,7 @@ namespace BeetleX.EFCore.Extension
 
         internal DbContext DB { get; set; }
 
-        public UpdateSql<T> Where(Expression<Func<T, bool>> filter)
+        public Update<T> Where(Expression<Func<T, bool>> filter)
         {
             mWhere = filter;
             return this;
@@ -69,7 +69,7 @@ namespace BeetleX.EFCore.Extension
     }
 
 
-    public class DeleteSql<T>
+    public class Delete<T>
     {
         private string mTable;
 
@@ -77,12 +77,12 @@ namespace BeetleX.EFCore.Extension
 
         public string Sql { get; private set; }
 
-        public DeleteSql()
+        public Delete()
         {
             mTable = SqlHelper.GetTableName(typeof(T));
         }
 
-        public DeleteSql<T> Where(Expression<Func<T, bool>> filter)
+        public Delete<T> Where(Expression<Func<T, bool>> filter)
         {
             mFilter = filter;
             return this;
@@ -124,7 +124,7 @@ namespace BeetleX.EFCore.Extension
     }
 
 
-    public class SelectSql<Entity> where Entity : new()
+    public class Select<Entity> where Entity : new()
     {
         private string mFields;
 
@@ -134,7 +134,7 @@ namespace BeetleX.EFCore.Extension
 
         private Expression<Func<Entity, bool>> mOrderBy;
 
-        public SelectSql(string fields = "*")
+        public Select(string fields = "*")
         {
             mFields = fields;
             mTable = SqlHelper.GetTableName(typeof(Entity));
@@ -166,32 +166,45 @@ namespace BeetleX.EFCore.Extension
             return sql.ExecuteScalar<int>(db);
 
         }
-        public SelectSql<Entity> Or(Expression<Func<Entity, bool>> filter)
+
+        public static Select<Entity> operator &(Select<Entity> sql, Expression<Func<Entity, bool>> filter)
+        {
+            sql.And(filter);
+            return sql;
+        }
+
+        public static Select<Entity> operator |(Select<Entity> sql, Expression<Func<Entity, bool>> filter)
+        {
+            sql.Or(filter);
+            return sql;
+        }
+
+        public Select<Entity> Or(Expression<Func<Entity, bool>> filter)
         {
             mFilters.Add(new Filter { Type = "Or", Expression = filter });
             return this;
         }
-        public SelectSql<Entity> And(Expression<Func<Entity, bool>> filter)
+        public Select<Entity> And(Expression<Func<Entity, bool>> filter)
         {
             mFilters.Add(new Filter { Type = "And", Expression = filter });
             return this;
         }
 
-        public SelectSql<Entity> Or(bool exp, Expression<Func<Entity, bool>> filter)
+        public Select<Entity> Or(bool exp, Expression<Func<Entity, bool>> filter)
         {
             if (exp)
                 mFilters.Add(new Filter { Type = "Or", Expression = filter });
             return this;
         }
 
-        public SelectSql<Entity> And(bool exp, Expression<Func<Entity, bool>> filter)
+        public Select<Entity> And(bool exp, Expression<Func<Entity, bool>> filter)
         {
             if (exp)
                 mFilters.Add(new Filter { Type = "And", Expression = filter });
             return this;
         }
 
-        public SelectSql<Entity> OrderBy(Expression<Func<Entity, bool>> order)
+        public Select<Entity> OrderBy(Expression<Func<Entity, bool>> order)
         {
             mOrderBy = order;
             return this;
@@ -252,7 +265,7 @@ namespace BeetleX.EFCore.Extension
             }
             if (mOrderBy != null)
                 sql.OrderBy<Entity>(mOrderBy);
-            return sql.List<Entity>(db);
+            return sql.List<Entity>(db, region);
         }
 
     }
@@ -285,6 +298,11 @@ namespace BeetleX.EFCore.Extension
         {
             sql.Add(subsql);
             return sql;
+        }
+        public static SQL operator +(SQL sql, ValueTuple<string, object> parameter)
+        {
+            return sql[parameter.Item1, parameter.Item2];
+
         }
 
         internal bool HasWhere { get; set; } = false;
@@ -336,9 +354,10 @@ namespace BeetleX.EFCore.Extension
 
         public SQL OrderByASC(params string[] fields)
         {
-            if (!HasWhere)
+            if (!HasOrderBy)
             {
                 AddSpace().Add("ORDER BY");
+                HasOrderBy = true;
             }
             for (int i = 0; i < fields.Length; i++)
             {
@@ -496,6 +515,44 @@ namespace BeetleX.EFCore.Extension
             return (IList<T>)List(typeof(T), db, region);
         }
 
+        public void List(DbContext db, Region region, Action<IDataReader> handler)
+        {
+            if (region == null)
+            {
+                region = new Region(0, 100);
+            }
+            int index = 0;
+            Command cmd = GetCommand();
+            var conn = db.Database.GetDbConnection();
+            if (conn.State == ConnectionState.Closed)
+                conn.Open();
+            var dbcmd = cmd.CreateCommand(conn);
+            dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+            SQLExecuting?.Invoke(dbcmd);
+            int count = 0;
+            using (IDataReader reader = dbcmd.ExecuteReader())
+            {
+
+                while (reader.Read())
+                {
+                    if (index >= region.Start)
+                    {
+                        handler?.Invoke(reader);
+                        count++;
+                        if (count >= region.Size)
+                        {
+                            cmd.DbCommand.Cancel();
+                            reader.Dispose();
+                            break;
+                        }
+                    }
+                    index++;
+                }
+
+            }
+
+        }
+
         internal IList List(Type type, DbContext db, Region region)
         {
             System.Type itemstype = System.Type.GetType("System.Collections.Generic.List`1");
@@ -503,7 +560,7 @@ namespace BeetleX.EFCore.Extension
             IList result;
             if (region == null)
             {
-                region = new Region(0, 10);
+                region = new Region(0, 100);
             }
             result = (IList)Activator.CreateInstance(itemstype, region.Size);
             EntityReader cr = EntityReader.GetReader(mBaseSql, type);

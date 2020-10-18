@@ -6,7 +6,7 @@ using System.Text;
 
 namespace BeetleX.EFCore.Extension
 {
-    class EntityReader
+    public class EntityReader
     {
         private static Dictionary<string, Dictionary<Type, EntityReader>> mCommandReaders = new Dictionary<string, Dictionary<Type, EntityReader>>(512);
 

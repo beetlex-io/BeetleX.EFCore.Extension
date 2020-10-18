@@ -137,7 +137,10 @@ namespace BeetleX.EFCore.Extension
         public void AddOrderBy(SQL sql, Expression exp)
         {
             if (!sql.HasOrderBy)
+            {
                 sql.AddSpace().Add("ORDER BY");
+                sql.HasOrderBy = true;
+            }
             if (exp is BinaryExpression binaryExpression)
             {
                 AddOrderBy(sql, binaryExpression.Left);
@@ -156,7 +159,10 @@ namespace BeetleX.EFCore.Extension
         public void AddWhere(SQL sql, LambdaExpression exp)
         {
             if (!sql.HasWhere)
+            {
                 sql.AddSpace().Add("WHERE");
+                sql.HasWhere = true;
+            }
             OnBuilderExpression(sql, exp.Body);
         }
 
