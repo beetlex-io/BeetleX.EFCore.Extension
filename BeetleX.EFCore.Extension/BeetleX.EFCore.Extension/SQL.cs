@@ -1,4 +1,7 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿#if NETCOREAPP2_1
+using BeetleX.Tracks;
+#endif
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using System;
 using System.Collections;
@@ -134,9 +137,12 @@ namespace BeetleX.EFCore.Extension
 
         private Expression<Func<Entity, bool>> mOrderBy;
 
-        public Select(string fields = "*")
+        public Select(params string[] fields)
         {
-            mFields = fields;
+            if (fields == null || fields.Length == 0)
+                mFields = "*";
+            else
+                mFields = string.Join(",", fields);
             mTable = SqlHelper.GetTableName(typeof(Entity));
         }
 
@@ -239,16 +245,29 @@ namespace BeetleX.EFCore.Extension
 
         }
 
+        public IList<T> List<T, DB>(Region region = null) where T : new()
+           where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return List<T>(db, region);
+            }
+        }
+
         public IList<Entity> List<DB>(Region region = null)
             where DB : DbContext, new()
         {
             using (var db = new DB())
             {
-                return List(db, region);
+                return List<Entity>(db, region);
             }
         }
-
         public IList<Entity> List(DbContext db, Region region = null)
+        {
+            return List<Entity>(db, region);
+        }
+        public IList<T> List<T>(DbContext db, Region region = null)
+            where T : new()
         {
             SQL sql = $"SELECT {mFields} FROM {mTable}";
             if (mFilters.Count > 0)
@@ -265,7 +284,7 @@ namespace BeetleX.EFCore.Extension
             }
             if (mOrderBy != null)
                 sql.OrderBy<Entity>(mOrderBy);
-            return sql.List<Entity>(db, region);
+            return sql.List<T>(db, region);
         }
 
     }
@@ -447,13 +466,21 @@ namespace BeetleX.EFCore.Extension
 
         public int Execute(DbContext db)
         {
+
             var conn = db.Database.GetDbConnection();
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var cmd = mCommand.CreateCommand(conn);
-            cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
-            SQLExecuting?.Invoke(cmd);
-            return cmd.ExecuteNonQuery();
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(cmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteSQL"))
+            {
+#endif
+                cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(cmd);
+                return cmd.ExecuteNonQuery();
+#if NETCOREAPP2_1
+            }
+#endif
         }
 
         public T ExecuteScalar<T, DB>() where DB : DbContext, new()
@@ -466,13 +493,22 @@ namespace BeetleX.EFCore.Extension
 
         public T ExecuteScalar<T>(DbContext db)
         {
+
             var conn = db.Database.GetDbConnection();
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var cmd = mCommand.CreateCommand(conn);
-            cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
-            SQLExecuting?.Invoke(cmd);
-            return (T)Convert.ChangeType(cmd.ExecuteScalar(), typeof(T));
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(cmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteSQL"))
+            {
+#endif
+                cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(cmd);
+                return (T)Convert.ChangeType(cmd.ExecuteScalar(), typeof(T));
+#if NETCOREAPP2_1
+            }
+#endif
+
         }
 
         public T ListFirst<T, DB>() where DB : DbContext, new()
@@ -523,34 +559,41 @@ namespace BeetleX.EFCore.Extension
             }
             int index = 0;
             Command cmd = GetCommand();
+
             var conn = db.Database.GetDbConnection();
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var dbcmd = cmd.CreateCommand(conn);
-            dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
-            SQLExecuting?.Invoke(dbcmd);
-            int count = 0;
-            using (IDataReader reader = dbcmd.ExecuteReader())
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(dbcmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteToObject"))
             {
-
-                while (reader.Read())
+#endif
+                dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(dbcmd);
+                int count = 0;
+                using (IDataReader reader = dbcmd.ExecuteReader())
                 {
-                    if (index >= region.Start)
+
+                    while (reader.Read())
                     {
-                        handler?.Invoke(reader);
-                        count++;
-                        if (count >= region.Size)
+                        if (index >= region.Start)
                         {
-                            cmd.DbCommand.Cancel();
-                            reader.Dispose();
-                            break;
+                            handler?.Invoke(reader);
+                            count++;
+                            if (count >= region.Size)
+                            {
+                                cmd.DbCommand.Cancel();
+                                reader.Dispose();
+                                break;
+                            }
                         }
+                        index++;
                     }
-                    index++;
+
                 }
-
+#if NETCOREAPP2_1
             }
-
+#endif
         }
 
         internal IList List(Type type, DbContext db, Region region)
@@ -570,31 +613,37 @@ namespace BeetleX.EFCore.Extension
             if (conn.State == ConnectionState.Closed)
                 conn.Open();
             var dbcmd = cmd.CreateCommand(conn);
-            dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
-            SQLExecuting?.Invoke(dbcmd);
-            using (IDataReader reader = dbcmd.ExecuteReader())
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(dbcmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteToObject"))
             {
-
-                while (reader.Read())
+#endif
+                dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(dbcmd);
+                using (IDataReader reader = dbcmd.ExecuteReader())
                 {
-                    if (index >= region.Start)
+
+                    while (reader.Read())
                     {
-                        object item = Activator.CreateInstance(type);
-                        cr.ReaderToObject(reader, item);
-                        result.Add(item);
-                        if (result.Count >= region.Size)
+                        if (index >= region.Start)
                         {
-                            cmd.DbCommand.Cancel();
-                            reader.Dispose();
-                            break;
+                            object item = Activator.CreateInstance(type);
+                            cr.ReaderToObject(reader, item);
+                            result.Add(item);
+                            if (result.Count >= region.Size)
+                            {
+                                cmd.DbCommand.Cancel();
+                                reader.Dispose();
+                                break;
+                            }
                         }
+                        index++;
                     }
-                    index++;
+
                 }
-
+                return result;
+#if NETCOREAPP2_1
             }
-
-            return result;
+#endif
 
         }
 
@@ -630,5 +679,200 @@ namespace BeetleX.EFCore.Extension
         }
 
         public Action<DbCommand> SQLExecuting { get; set; }
+
+        #region async
+
+
+        public Task<int> ExecuteAsync<DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return ExecuteAsync(db);
+            }
+        }
+
+        public async Task<int> ExecuteAsync(DbContext db)
+        {
+
+            var conn = db.Database.GetDbConnection();
+            if (conn.State == ConnectionState.Closed)
+                await conn.OpenAsync();
+            var cmd = mCommand.CreateCommand(conn);
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(cmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteSQL"))
+            {
+#endif
+                cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(cmd);
+                return await cmd.ExecuteNonQueryAsync();
+#if NETCOREAPP2_1
+            }
+#endif
+        }
+
+        public Task<T> ExecuteScalarAsync<T, DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return ExecuteScalarAsync<T>(db);
+            }
+        }
+
+        public async Task<T> ExecuteScalarAsync<T>(DbContext db)
+        {
+
+            var conn = db.Database.GetDbConnection();
+            if (conn.State == ConnectionState.Closed)
+                await conn.OpenAsync();
+            var cmd = mCommand.CreateCommand(conn);
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(cmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteSQL"))
+            {
+#endif
+                cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(cmd);
+                
+                return (T)Convert.ChangeType(await cmd.ExecuteScalarAsync(), typeof(T));
+#if NETCOREAPP2_1
+            }
+#endif
+
+        }
+
+
+        public Task<T> ListFirstAsync<T, DB>() where DB : DbContext, new()
+    where T : new()
+        {
+            using (var db = new DB())
+            {
+                return ListFirstAsync<T>(db);
+            }
+        }
+
+        public async Task<T> ListFirstAsync<T>(DbContext db) where T : new()
+        {
+            IList<T> result = (IList<T>)await ListAsync(typeof(T), db, new Region(0, 1));
+            if (result.Count > 0)
+                return result[0];
+            return default(T);
+
+        }
+
+        internal async Task<object> ListFirstAsync(Type type, DbContext db)
+        {
+            IList result = await ListAsync(type, db, null);
+            if (result.Count > 0)
+                return result[0];
+            return null;
+        }
+
+        public async Task<IList<T>> ListAsync<T, DB>(Region region = null) where T : new()
+            where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return await ListAsync<T>(db, region);
+            }
+        }
+
+        public async Task<IList<T>> ListAsync<T>(DbContext db, Region region = null) where T : new()
+        {
+            return (IList<T>)await ListAsync(typeof(T), db, region);
+        }
+
+        public async Task ListAsync(DbContext db, Region region, Action<IDataReader> handler)
+        {
+            if (region == null)
+            {
+                region = new Region(0, 100);
+            }
+            int index = 0;
+            Command cmd = GetCommand();
+
+            var conn = db.Database.GetDbConnection();
+            if (conn.State == ConnectionState.Closed)
+                await  conn.OpenAsync();
+            var dbcmd = cmd.CreateCommand(conn);
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(dbcmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteToObject"))
+            {
+#endif
+                dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(dbcmd);
+                int count = 0;
+                using (DbDataReader reader = await dbcmd.ExecuteReaderAsync())
+                {
+                    while ( await reader.ReadAsync())
+                    {
+                        if (index >= region.Start)
+                        {
+                            handler?.Invoke(reader);
+                            count++;
+                            if (count >= region.Size)
+                            {
+                                cmd.DbCommand.Cancel();
+                                reader.Dispose();
+                                break;
+                            }
+                        }
+                        index++;
+                    }
+
+                }
+#if NETCOREAPP2_1
+            }
+#endif
+        }
+
+        internal async Task<IList> ListAsync(Type type, DbContext db, Region region)
+        {
+            System.Type itemstype = System.Type.GetType("System.Collections.Generic.List`1");
+            itemstype = itemstype.MakeGenericType(type);
+            IList result;
+            if (region == null)
+            {
+                region = new Region(0, 100);
+            }
+            result = (IList)Activator.CreateInstance(itemstype, region.Size);
+            EntityReader cr = EntityReader.GetReader(mBaseSql, type);
+            int index = 0;
+            Command cmd = GetCommand();
+            var conn = db.Database.GetDbConnection();
+            if (conn.State == ConnectionState.Closed)
+                await conn.OpenAsync();
+            var dbcmd = cmd.CreateCommand(conn);
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(dbcmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteToObject"))
+            {
+#endif
+                dbcmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(dbcmd);
+                using (DbDataReader reader = await dbcmd.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        if (index >= region.Start)
+                        {
+                            object item = Activator.CreateInstance(type);
+                            cr.ReaderToObject(reader, item);
+                            result.Add(item);
+                            if (result.Count >= region.Size)
+                            {
+                                cmd.DbCommand.Cancel();
+                                reader.Dispose();
+                                break;
+                            }
+                        }
+                        index++;
+                    }
+
+                }
+                return result;
+#if NETCOREAPP2_1
+            }
+#endif
+
+        }
+        #endregion
     }
 }

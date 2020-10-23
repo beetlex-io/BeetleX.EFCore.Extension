@@ -1,4 +1,7 @@
-﻿using System;
+﻿#if NETCOREAPP2_1
+using BeetleX.Tracks;
+#endif
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -147,22 +150,29 @@ namespace BeetleX.EFCore.Extension
 
         public DbCommand CreateCommand(DbConnection conn)
         {
-            DbCommand cmd = conn.CreateCommand();
-            
-            cmd.CommandText = Text.ToString();
-            cmd.CommandType = CommandType;
-            DbCommand = cmd;
-            for (int i = 0; i < Parameters.Count; i++)
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track("CreateCommand", CodeTrackLevel.Function, null, "EFCore"))
             {
-                Parameter p = Parameters[i];
-                var cmdp = cmd.CreateParameter();
-                cmdp.ParameterName = p.Name;
-                cmdp.Value = p.Value;
-                cmdp.Direction = p.Direction;
-                cmd.Parameters.Add(cmdp);
+#endif
+                DbCommand cmd = conn.CreateCommand();
 
+                cmd.CommandText = Text.ToString();
+                cmd.CommandType = CommandType;
+                DbCommand = cmd;
+                for (int i = 0; i < Parameters.Count; i++)
+                {
+                    Parameter p = Parameters[i];
+                    var cmdp = cmd.CreateParameter();
+                    cmdp.ParameterName = p.Name;
+                    cmdp.Value = p.Value;
+                    cmdp.Direction = p.Direction;
+                    cmd.Parameters.Add(cmdp);
+
+                }
+                return cmd;
+#if NETCOREAPP2_1
             }
-            return cmd;
+#endif
         }
     }
 }
