@@ -17,7 +17,7 @@ namespace BeetleX.EFCore.Extension
         public XDBContext() : base() { }
         public XDBContext(DbContextOptions options) : base(options)
         {
-            
+
         }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

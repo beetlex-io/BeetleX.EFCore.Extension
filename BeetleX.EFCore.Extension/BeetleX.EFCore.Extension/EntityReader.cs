@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 
 namespace BeetleX.EFCore.Extension
@@ -51,7 +53,7 @@ namespace BeetleX.EFCore.Extension
         {
             foreach (PropertyInfo info in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             {
-                mProperties.Add(new ReadProperty() { Handler = new PropertyHandler(info), Name = info.Name});
+                mProperties.Add(new ReadProperty() { Handler = new PropertyHandler(info), Name = info.Name });
             }
         }
 
@@ -59,13 +61,30 @@ namespace BeetleX.EFCore.Extension
 
         public void ReaderToObject(System.Data.IDataReader reader, object obj)
         {
-            if (!mLoadColumnIndex)
-                SetColumnIndex(reader);
-            for (int i = 0; i < mProperties.Count; i++)
+            if (obj is IDictionary<string, object> dynamicObject)
             {
-                ReaderToProperty(reader, obj, mProperties[i]);
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    var dbvalue = reader[i];
+                    if (dbvalue != DBNull.Value)
+                    {
+                        dynamicObject[reader.GetName(i)] = dbvalue;
+                    }
+                    else
+                    {
+                        dynamicObject[reader.GetName(i)] = null;
+                    }
+                }
             }
-
+            else
+            {
+                if (!mLoadColumnIndex)
+                    SetColumnIndex(reader);
+                for (int i = 0; i < mProperties.Count; i++)
+                {
+                    ReaderToProperty(reader, obj, mProperties[i]);
+                }
+            }
         }
 
         private void ReaderToProperty(System.Data.IDataReader reader, object obj, ReadProperty p)

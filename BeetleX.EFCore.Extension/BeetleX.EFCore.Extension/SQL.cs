@@ -8,7 +8,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Dynamic;
 using System.Linq.Expressions;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -262,10 +264,12 @@ namespace BeetleX.EFCore.Extension
                 return List<Entity>(db, region);
             }
         }
+
         public IList<Entity> List(DbContext db, Region region = null)
         {
             return List<Entity>(db, region);
         }
+
         public IList<T> List<T>(DbContext db, Region region = null)
             where T : new()
         {
@@ -287,6 +291,110 @@ namespace BeetleX.EFCore.Extension
             return sql.List<T>(db, region);
         }
 
+
+        #region async
+
+        public Task<int> CountAsync<DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return CountAsync(db);
+            }
+        }
+
+        public async Task<int> CountAsync(DbContext db)
+        {
+            SQL sql = $"SELECT count(*) FROM {mTable}";
+            if (mFilters.Count > 0)
+                sql += " where ";
+            SqlHelper where = new SqlHelper();
+            for (int i = 0; i < mFilters.Count; i++)
+            {
+                var item = mFilters[i];
+                if (i > 0)
+                {
+                    sql += $" {item.Type} ";
+                }
+                where.AddWhere(sql, item.Expression);
+            }
+            return await sql.ExecuteScalarAsync<int>(db);
+
+        }
+
+        public Task<Entity> ListFirstAsync<DB>() where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return ListFirstAsync(db);
+            }
+        }
+
+        public Task<Entity> ListFirstAsync(DbContext db)
+        {
+            SQL sql = $"SELECT {mFields} FROM {mTable}";
+            if (mFilters.Count > 0)
+                sql += " where ";
+            SqlHelper where = new SqlHelper();
+            for (int i = 0; i < mFilters.Count; i++)
+            {
+                var item = mFilters[i];
+                if (i > 0)
+                {
+                    sql += $" {item.Type} ";
+                }
+                where.AddWhere(sql, item.Expression);
+            }
+            if (mOrderBy != null)
+                sql.OrderBy<Entity>(mOrderBy);
+            return sql.ListFirstAsync<Entity>(db);
+
+        }
+
+        public Task<IList<T>> ListAsync<T, DB>(Region region = null) where T : new()
+           where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return ListAsync<T>(db, region);
+            }
+        }
+
+        public Task<IList<Entity>> ListAsync<DB>(Region region = null)
+            where DB : DbContext, new()
+        {
+            using (var db = new DB())
+            {
+                return ListAsync<Entity>(db, region);
+            }
+        }
+
+        public Task<IList<Entity>> ListAsync(DbContext db, Region region = null)
+        {
+            return ListAsync<Entity>(db, region);
+        }
+
+        public async Task<IList<T>> ListAsync<T>(DbContext db, Region region = null)
+            where T : new()
+        {
+            SQL sql = $"SELECT {mFields} FROM {mTable}";
+            if (mFilters.Count > 0)
+                sql += " where ";
+            SqlHelper where = new SqlHelper();
+            for (int i = 0; i < mFilters.Count; i++)
+            {
+                var item = mFilters[i];
+                if (i > 0)
+                {
+                    sql += $" {item.Type} ";
+                }
+                where.AddWhere(sql, item.Expression);
+            }
+            if (mOrderBy != null)
+                sql.OrderBy<Entity>(mOrderBy);
+            return await sql.ListAsync<T>(db, region);
+        }
+
+        #endregion
     }
 
 
@@ -305,6 +413,10 @@ namespace BeetleX.EFCore.Extension
         {
             mBaseSql = sql;
             mCommand.AddSqlText(sql);
+            if(sql.IndexOf("where", StringComparison.OrdinalIgnoreCase)>=0)
+            {
+                HasWhere = true;
+            }
         }
 
         public static SQL operator +(string subsql, SQL sql)
@@ -652,6 +764,18 @@ namespace BeetleX.EFCore.Extension
             return mCommand;
         }
 
+        public SQL And()
+        {
+            Add(" AND ");
+            return this;
+        }
+
+        public SQL Or()
+        {
+            Add(" OR ");
+            return this;
+        }
+
         public SQL Where<T>(Expression<Func<T, bool>> filter)
         {
             SqlHelper where = new SqlHelper();
@@ -673,6 +797,49 @@ namespace BeetleX.EFCore.Extension
             return this;
         }
 
+        private void ModifyCommanToCount(DbCommand cmd)
+        {
+            var index = cmd.CommandText.IndexOf("select", 0, StringComparison.OrdinalIgnoreCase);
+            if (index != 0)
+                throw new Exception("The current sql statement is not select！");
+            var fromindex = cmd.CommandText.IndexOf("from", 0, StringComparison.OrdinalIgnoreCase);
+            if (fromindex < 1)
+                throw new Exception("The current sql statement is not select！");
+            StringBuilder sb = new StringBuilder();
+            sb.Append(cmd.CommandText.Substring(0, 6));
+            sb.Append(" count(*) ");
+            sb.Append(cmd.CommandText.Substring(fromindex));
+            cmd.CommandText = sb.ToString();
+
+        }
+
+        public int Count<DB>() where DB : DbContext, new()
+        {
+            using (DB db = new DB())
+            {
+                return Count(db);
+            }
+        }
+
+        public int Count(DbContext db)
+        {
+            var conn = db.Database.GetDbConnection();
+            if (conn.State == ConnectionState.Closed)
+                conn.Open();
+            var cmd = mCommand.CreateCommand(conn);
+            ModifyCommanToCount(cmd);
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(cmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteSQL"))
+            {
+#endif
+                cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(cmd);
+                return (int)Convert.ChangeType(cmd.ExecuteScalar(), typeof(int));
+#if NETCOREAPP2_1
+            }
+#endif
+        }
+
         public override string ToString()
         {
             return Command.Text.ToString();
@@ -681,7 +848,6 @@ namespace BeetleX.EFCore.Extension
         public Action<DbCommand> SQLExecuting { get; set; }
 
         #region async
-
 
         public Task<int> ExecuteAsync<DB>() where DB : DbContext, new()
         {
@@ -731,7 +897,7 @@ namespace BeetleX.EFCore.Extension
 #endif
                 cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
                 SQLExecuting?.Invoke(cmd);
-                
+
                 return (T)Convert.ChangeType(await cmd.ExecuteScalarAsync(), typeof(T));
 #if NETCOREAPP2_1
             }
@@ -791,7 +957,7 @@ namespace BeetleX.EFCore.Extension
 
             var conn = db.Database.GetDbConnection();
             if (conn.State == ConnectionState.Closed)
-                await  conn.OpenAsync();
+                await conn.OpenAsync();
             var dbcmd = cmd.CreateCommand(conn);
 #if NETCOREAPP2_1
             using (CodeTrackFactory.Track(dbcmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteToObject"))
@@ -802,7 +968,7 @@ namespace BeetleX.EFCore.Extension
                 int count = 0;
                 using (DbDataReader reader = await dbcmd.ExecuteReaderAsync())
                 {
-                    while ( await reader.ReadAsync())
+                    while (await reader.ReadAsync())
                     {
                         if (index >= region.Start)
                         {
@@ -873,6 +1039,34 @@ namespace BeetleX.EFCore.Extension
 #endif
 
         }
+
+        public Task<int> CountAsync<DB>() where DB : DbContext, new()
+        {
+            using (DB db = new DB())
+            {
+                return CountAsync(db);
+            }
+        }
+
+        public async Task<int> CountAsync(DbContext db)
+        {
+            var conn = db.Database.GetDbConnection();
+            if (conn.State == ConnectionState.Closed)
+                await conn.OpenAsync();
+            var cmd = mCommand.CreateCommand(conn);
+            ModifyCommanToCount(cmd);
+#if NETCOREAPP2_1
+            using (CodeTrackFactory.Track(cmd.CommandText, CodeTrackLevel.Function, null, "EFCore", "ExecuteSQL"))
+            {
+#endif
+                cmd.Transaction = db.Database.CurrentTransaction?.GetDbTransaction();
+                SQLExecuting?.Invoke(cmd);
+                return (int)Convert.ChangeType(await cmd.ExecuteScalarAsync(), typeof(int));
+#if NETCOREAPP2_1
+            }
+#endif
+        }
+
         #endregion
     }
 }

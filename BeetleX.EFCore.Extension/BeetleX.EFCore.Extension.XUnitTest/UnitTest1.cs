@@ -2,75 +2,82 @@ using System;
 using Xunit;
 using System.Linq;
 using System.Linq.Expressions;
+using NorthwindEFCoreSqlite;
+using BeetleX.Tracks;
+using Xunit.Abstractions;
 
 namespace BeetleX.EFCore.Extension.XUnitTest
 {
     public class UnitTest1
     {
+        readonly ITestOutputHelper Console;
+        public UnitTest1(ITestOutputHelper output)
+        {
+            this.Console = output;
+
+        }
         [Fact]
         public void BaseSQL()
         {
-
             SQL sql = "select * from employees";
-            var items = sql.List<employees, NorthWind>();
-            Assert.Equal<int>(9, items.Count);
+            var employees = sql.List<Employee, NorthwindContext>();
 
-            var select = "select * from employees";
-            sql = select;
-            sql.Add(" where id in (@p1,@p2) order by id asc", ("@p1", 1), ("@p2", 2));
-            items = sql.List<employees, NorthWind>();
-            Assert.Equal<int>(1, items[0].id);
-            Assert.Equal<int>(2, items[1].id);
+            sql = "select * from customers where country=@country";
+            sql += ("@country", "UK");
+            var customers = sql.List<Customer, NorthwindContext>();
 
-
-            sql = select;
-            sql.Where<employees>(e => e.id == 3);
-            var item = sql.ListFirst<employees, NorthWind>();
-            Assert.Equal<int>(3, item.id);
-
-            sql = select;
-            sql.OrderBy<employees>(p => p.id.DESC());
-            item = sql.ListFirst<employees, NorthWind>();
-            Assert.Equal<int>(9, item.id);
         }
         [Fact]
-        public void Joni()
+        public void update()
         {
-          
-        }
-
-        [Fact]
-        public void Update()
-        {
-            UpdateSql<employees> update = new UpdateSql<employees>();
-            update.Set(f => f.fax_number == "123").Where(f => f.id == 1).Execute<NorthWind>();
-
-            SelectSql<employees> list = new SelectSql<employees>();
-            list.And(f => f.id == 1);
-            var item = list.ListFirst<NorthWind>();
-            Assert.Equal("123", item.fax_number);
-
-            using (var db = new NorthWind())
+            using (NorthwindContext db = new NorthwindContext())
             {
-                db.Customers.Update(c => c.city == "gz").Execute();
-                SelectSql<customers> lstCustomers = new SelectSql<customers>();
-                foreach (var customer in lstCustomers.List(db))
-                {
-                    Assert.Equal("gz", customer.city);
-                }
+                var cmd = db.Customers.Update(c => c.Region == "uk")
+                    .Where(c => c.Country == "UK").Execute();
+                var items = db.Customers.Where(c => c.Country == "UK").Select(c => c).ToArray();
 
             }
+        }
+        class CustomerName
+        {
+            public string CustomerID { get; set; }
+
+            public string CompanyName { get; set; }
+        }
+        [Fact]
+        public void AutoExecute()
+        {
+            CodeTrackFactory.Level = CodeTrackLevel.All;
+            using (CodeTrackFactory.TrackReport("AutoExecute", CodeTrackLevel.Bussiness, null, "EFCore", "BeetleX"))
+            {
+                using (NorthwindContext db = new NorthwindContext())
+                {
+                    DBValueList<string> values = (db, "select customerid from customers");
+                    DBObjectList<CustomerName> items = (db, "select CustomerID,CompanyName from customers");
+                    DBExecute<string> id = (db, "select CompanyName from customers where CustomerID='ALFKI'");
+                    DBExecute execute = (db, "delete from customers", " delete from orders");
+                }
+            }
+            this.Console.WriteLine(CodeTrackFactory.Activity?.GetReport());
+        }
+        [Fact]
+        public void selectObject()
+        {
+
+            Select<Customer> select = new Select<Customer>("CustomerID", "CompanyName");
+            select &= c => c.Country == "UK";
+            var items = select.List<CustomerName, NorthwindContext>();
+
 
         }
         [Fact]
         public void Delete()
         {
-            DeleteSql<employees> del = new DeleteSql<employees>();
-            del.Where(f => f.id.In(1, 2, 3));
-            del.Execute<NorthWind>();
-            using (var db = new NorthWind())
+            using (NorthwindContext db = new NorthwindContext())
             {
-                db.Customers.Delete(f => f.id.In(1, 2, 3));
+                var cmd = db.Customers.Delete(c => c.Country == "UK");
+                var items = db.Customers.Where(c => c.Country == "UK").Select(c => c).ToArray();
+
             }
         }
     }

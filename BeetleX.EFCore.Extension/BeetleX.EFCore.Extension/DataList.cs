@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace BeetleX.EFCore.Extension
 {
@@ -231,5 +232,97 @@ namespace BeetleX.EFCore.Extension
         }
     }
 
+    public class DBRegionData<T>
+        where T : new()
+    {
+        public DBRegionData(int index, int size)
+        {
+            Index = index;
+            Size = size;
+            if (Size == 0)
+                Size = 20;
+        }
+
+        public int Index { get; set; }
+
+        public int Size { get; set; }
+
+        public IList<T> Items { get; set; }
+
+        public int Count { get; set; }
+
+        public int Pages { get; set; }
+
+        public Task ExecuteAsync<DB>(SQL sql) where DB : DbContext, new()
+        {
+            using (DB db = new DB())
+            {
+                return ExecuteAsync(db, sql);
+            }
+        }
+        public async Task ExecuteAsync(DbContext db, SQL sql)
+        {
+            Count = await sql.CountAsync(db);
+            Items = await sql.ListAsync<T>(db, new Region(Index, Size));
+            Pages = Count / Size;
+            if (Count % Size > 0)
+            {
+                Pages++;
+            }
+        }
+        public void Execute<DB>(SQL sql) where DB : DbContext, new()
+        {
+            using (DB db = new DB())
+            {
+                Execute(db, sql);
+            }
+        }
+        public void Execute(DbContext db, SQL sql)
+        {
+            Count = sql.Count(db);
+            Items = sql.List<T>(db, new Region(Index, Size));
+            Pages = Count / Size;
+            if (Count % Size > 0)
+            {
+                Pages++;
+            }
+        }
+
+        public Task ExecuteAsync<DB>(Select<T> sql) where DB : DbContext, new()
+        {
+            using (DB db = new DB())
+            {
+                return ExecuteAsync(db, sql);
+            }
+        }
+
+        public async Task ExecuteAsync(DbContext db, Select<T> sql)
+        {
+            Count = await sql.CountAsync(db);
+            Items = await sql.ListAsync(db, new Region(Index, Size));
+            Pages = Count / Size;
+            if (Count % Size > 0)
+            {
+                Pages++;
+            }
+        }
+        public void Execute<DB>(Select<T> sql) where DB : DbContext, new()
+        {
+            using (DB db = new DB())
+            {
+                Execute(db, sql);
+            }
+        }
+        public void Execute(DbContext db, Select<T> sql)
+        {
+            Count = sql.Count(db);
+            Items = sql.List(db, new Region(Index, Size));
+            Pages = Count / Size;
+            if (Count % Size > 0)
+            {
+                Pages++;
+            }
+        }
+    }
 
 }

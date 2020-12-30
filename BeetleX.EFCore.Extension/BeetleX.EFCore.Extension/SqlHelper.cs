@@ -317,6 +317,20 @@ namespace BeetleX.EFCore.Extension
                 sql.AddSpace().Add(NodeTypeToString(left.NodeType, false));
                 OnBuilderMethodExpression(sql, methodCall);
             }
+            else if(right is UnaryExpression unary)
+            {
+                var data = GetValue(unary);
+                if (data == null)
+                {
+                    sql.AddSpace().Add(NodeTypeToString(left.NodeType, true));
+                }
+                else
+                {
+                    sql.AddSpace().Add(NodeTypeToString(left.NodeType, false));
+                    string name = GetParameterName();
+                    sql.AddSpace().Add(name, (name, data));
+                }
+            }
             else
             {
                 throw new Exception($"Unsupported {right}");
